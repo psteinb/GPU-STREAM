@@ -48,10 +48,10 @@ CUDAStream<T>::CUDAStream(const unsigned int ARRAY_SIZE, const int device_index)
   array_size = ARRAY_SIZE;
 
   // Check buffers fit on the device
-  cudaDeviceProp props;
-  cudaGetDeviceProperties(&props, 0);
-  if (props.totalGlobalMem < 3*ARRAY_SIZE*sizeof(T))
-    throw std::runtime_error("Device does not have enough memory for all 3 buffers");
+  //cudaDeviceProp props;
+  //cudaGetDeviceProperties(&props, 0);
+  //if (props.totalGlobalMem < 3*ARRAY_SIZE*sizeof(T))
+  //  throw std::runtime_error("Device does not have enough memory for all 3 buffers");
 
   // Create device buffers
   cudaMalloc(&d_a, ARRAY_SIZE*sizeof(T));
@@ -99,8 +99,7 @@ void CUDAStream<T>::read_arrays(std::vector<T>& a, std::vector<T>& b, std::vecto
 }
 
 
-template <typename T>
-__global__ void copy_kernel(const T * a, T * c)
+__global__ void copy_kernel(const double * a, double * c)
 {
   const int i = blockDim.x * blockIdx.x + threadIdx.x;
   c[i] = a[i];
@@ -111,14 +110,13 @@ void CUDAStream<T>::copy()
 {
   copy_kernel<<<array_size/TBSIZE, TBSIZE>>>(d_a, d_c);
   check_error();
-  cudaDeviceSynchronize();
-  check_error();
+  //cudaDeviceSynchronize();
+  //check_error();
 }
 
-template <typename T>
-__global__ void mul_kernel(T * b, const T * c)
+__global__ void mul_kernel(double * b, const double * c)
 {
-  const T scalar = 0.3;
+  const double scalar = 0.3;
   const int i = blockDim.x * blockIdx.x + threadIdx.x;
   b[i] = scalar * c[i];
 }
@@ -128,12 +126,11 @@ void CUDAStream<T>::mul()
 {
   mul_kernel<<<array_size/TBSIZE, TBSIZE>>>(d_b, d_c);
   check_error();
-  cudaDeviceSynchronize();
-  check_error();
+  //cudaDeviceSynchronize();
+  //check_error();
 }
 
-template <typename T>
-__global__ void add_kernel(const T * a, const T * b, T * c)
+__global__ void add_kernel(const double * a, const double * b, double * c)
 {
   const int i = blockDim.x * blockIdx.x + threadIdx.x;
   c[i] = a[i] + b[i];
@@ -144,14 +141,13 @@ void CUDAStream<T>::add()
 {
   add_kernel<<<array_size/TBSIZE, TBSIZE>>>(d_a, d_b, d_c);
   check_error();
-  cudaDeviceSynchronize();
-  check_error();
+  //cudaDeviceSynchronize();
+  //check_error();
 }
 
-template <typename T>
-__global__ void triad_kernel(T * a, const T * b, const T * c)
+__global__ void triad_kernel(double * a, const double * b, const double * c)
 {
-  const T scalar = 0.3;
+  const double scalar = 0.3;
   const int i = blockDim.x * blockIdx.x + threadIdx.x;
   a[i] = b[i] + scalar * c[i];
 }
@@ -161,8 +157,8 @@ void CUDAStream<T>::triad()
 {
   triad_kernel<<<array_size/TBSIZE, TBSIZE>>>(d_a, d_b, d_c);
   check_error();
-  cudaDeviceSynchronize();
-  check_error();
+  //cudaDeviceSynchronize();
+  //check_error();
 }
 
 
@@ -207,8 +203,9 @@ std::string getDeviceDriver(const int device)
   int driver;
   cudaDriverGetVersion(&driver);
   check_error();
-  return std::to_string(driver);
+  return "cuda-x86";
+  //return std::to_string(driver);
 }
 
-template class CUDAStream<float>;
+//template class CUDAStream<float>;
 template class CUDAStream<double>;

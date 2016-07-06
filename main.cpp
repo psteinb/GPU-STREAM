@@ -10,10 +10,12 @@
 #include <numeric>
 #include <cmath>
 #include <limits>
-#include <chrono>
+//#include <chrono>
 #include <algorithm>
 #include <iomanip>
 #include <cstring>
+
+#include <sys/time.h>
 
 #include "common.h"
 #include "Stream.h"
@@ -63,13 +65,20 @@ int main(int argc, char *argv[])
   // TODO: Fix SYCL to allow multiple template specializations
 #ifndef SYCL
 #ifndef KOKKOS
-  if (use_float)
-    run<float>();
-  else
+  //if (use_float)
+  //  run<float>();
+  //else
 #endif
 #endif
     run<double>();
 
+}
+
+double getTimestamp()
+{
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + tv.tv_usec*1e-6;
 }
 
 template <typename T>
@@ -133,37 +142,39 @@ void run()
   stream->write_arrays(a, b, c);
 
   // List of times
-  std::vector<std::vector<double>> timings(4);
+  std::vector<std::vector<double> > timings(4);
 
   // Declare timers
-  std::chrono::high_resolution_clock::time_point t1, t2;
+  double t1, t2;
+  //std::chrono::high_resolution_clock::time_point t1, t2;
 
   // Main loop
   for (unsigned int k = 0; k < num_times; k++)
   {
     // Execute Copy
-    t1 = std::chrono::high_resolution_clock::now();
+    //t1 = std::chrono::high_resolution_clock::now();
+    t1 = getTimestamp();
     stream->copy();
-    t2 = std::chrono::high_resolution_clock::now();
-    timings[0].push_back(std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count());
+    t2 = getTimestamp();;
+    timings[0].push_back(t2-t1);
 
     // Execute Mul
-    t1 = std::chrono::high_resolution_clock::now();
+    t1 = getTimestamp();
     stream->mul();
-    t2 = std::chrono::high_resolution_clock::now();
-    timings[1].push_back(std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count());
+    t2 = getTimestamp();
+    timings[1].push_back(t2-t1);
 
     // Execute Add
-    t1 = std::chrono::high_resolution_clock::now();
+    t1 = getTimestamp();
     stream->add();
-    t2 = std::chrono::high_resolution_clock::now();
-    timings[2].push_back(std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count());
+    t2 = getTimestamp();
+    timings[2].push_back(t2-t1);
 
     // Execute Triad
-    t1 = std::chrono::high_resolution_clock::now();
+    t1 = getTimestamp();
     stream->triad();
-    t2 = std::chrono::high_resolution_clock::now();
-    timings[3].push_back(std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count());
+    t2 = getTimestamp();
+    timings[3].push_back(t2-t1);
 
   }
 
@@ -192,17 +203,24 @@ void run()
   for (int i = 0; i < 4; i++)
   {
     // Get min/max; ignore the first result
-    auto minmax = std::minmax_element(timings[i].begin()+1, timings[i].end());
+    //auto minmax = std::minmax_element(timings[i].begin()+1, timings[i].end());
+    double min = 10000, max = 0, total = 0.0;
+    for (int j = 0; j < num_times; j++)
+    {
+      min = timings[i][j] < min ? timings[i][j] : min;
+      max = timings[i][j] > max ? timings[i][j] : max;
+      total += timings[i][j];
+    }
 
     // Calculate average; ignore the first result
-    double average = std::accumulate(timings[i].begin()+1, timings[i].end(), 0.0) / (double)(num_times - 1);
+    double average = total / (double)(num_times - 1);
 
     // Display results
     std::cout
       << std::left << std::setw(12) << labels[i]
-      << std::left << std::setw(12) << std::setprecision(3) << 1.0E-6 * sizes[i] / (*minmax.first)
-      << std::left << std::setw(12) << std::setprecision(5) << *minmax.first
-      << std::left << std::setw(12) << std::setprecision(5) << *minmax.second
+      << std::left << std::setw(12) << std::setprecision(3) << 1.0E-6 * sizes[i] / (min)
+      << std::left << std::setw(12) << std::setprecision(5) << min
+      << std::left << std::setw(12) << std::setprecision(5) << max
       << std::left << std::setw(12) << std::setprecision(5) << average
       << std::endl;
 
@@ -232,11 +250,18 @@ void check_solution(const unsigned int ntimes, std::vector<T>& a, std::vector<T>
   }
 
   // Calculate the average error
-  double errA = std::accumulate(a.begin(), a.end(), 0.0, [&](double sum, const T val){ return sum + fabs(val - goldA); });
+  double errA = 0.0, errB = 0.0, errC = 0.0;
+  for (int i = 0; i < a.size(); i++)
+  {
+    errA += fabs(a[i] - goldA);
+    errB += fabs(b[i] - goldB);
+    errC += fabs(c[i] - goldC);
+  }
+  //double errA = std::accumulate(a.begin(), a.end(), 0.0, [&](double sum, const T val){ return sum + fabs(val - goldA); });
   errA /= a.size();
-  double errB = std::accumulate(b.begin(), b.end(), 0.0, [&](double sum, const T val){ return sum + fabs(val - goldB); });
+  //double errB = std::accumulate(b.begin(), b.end(), 0.0, [&](double sum, const T val){ return sum + fabs(val - goldB); });
   errB /= b.size();
-  double errC = std::accumulate(c.begin(), c.end(), 0.0, [&](double sum, const T val){ return sum + fabs(val - goldC); });
+  //double errC = std::accumulate(c.begin(), c.end(), 0.0, [&](double sum, const T val){ return sum + fabs(val - goldC); });
   errC /= c.size();
 
   double epsi = std::numeric_limits<T>::epsilon() * 100.0;

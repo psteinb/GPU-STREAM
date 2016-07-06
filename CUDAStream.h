@@ -32,12 +32,12 @@ class CUDAStream : public Stream<T>
     CUDAStream(const unsigned int, const int);
     ~CUDAStream();
 
-    virtual void copy() override;
-    virtual void add() override;
-    virtual void mul() override;
-    virtual void triad() override;
+    virtual void copy() ;
+    virtual void add() ;
+    virtual void mul() ;
+    virtual void triad() ;
 
-    virtual void write_arrays(const std::vector<T>& a, const std::vector<T>& b, const std::vector<T>& c) override;
-    virtual void read_arrays(std::vector<T>& a, std::vector<T>& b, std::vector<T>& c) override;
+    virtual void write_arrays(const std::vector<T>& a, const std::vector<T>& b, const std::vector<T>& c) ;
+    virtual void read_arrays(std::vector<T>& a, std::vector<T>& b, std::vector<T>& c) ;
 
 };
