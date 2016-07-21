@@ -34,6 +34,8 @@
 #include "OMP3Stream.h"
 #elif defined(OMP45)
 #include "OMP45Stream.h"
+#elif defined(HCC)
+#include "HCCStream.h"
 #endif
 
 // Default size of 2^25
@@ -128,6 +130,10 @@ void run()
   // Use the "reference" OpenMP 3 implementation
   stream = new OMP45Stream<T>(ARRAY_SIZE, a.data(), b.data(), c.data(), deviceIndex);
 
+#elif defined(HCC)
+  // Use the "reference" OpenMP 3 implementation
+  stream = new HCCStream<T>(ARRAY_SIZE, deviceIndex);
+  
 #endif
 
   stream->write_arrays(a, b, c);

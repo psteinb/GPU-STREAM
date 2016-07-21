@@ -137,6 +137,53 @@ else()
 endif()
 
 #-------------------------------------------------------------------------------
+# HCC
+#-------------------------------------------------------------------------------
+IF(UNIX)
+
+  find_program(PATH_TO_HCC hcc)
+    
+  if(PATH_TO_HCC)
+    
+    set(HCC_FOUND TRUE)
+    
+    execute_process(COMMAND hcc-config --cxxflags OUTPUT_VARIABLE HCC_COMPILE_FLAGS)
+    execute_process(COMMAND hcc-config --ldflags OUTPUT_VARIABLE HCC_LINKER_FLAGS)
+    message(">> hcc     : ${PATH_TO_HCC}")
+    message(">> cxxflags: ${HCC_COMPILE_FLAGS}")
+    message(">> ldflags : ${HCC_LINKER_FLAGS} ")
+
+  else()
+    set(HCC_FOUND FALSE)
+    set(HCC_NOTFOUND TRUE)
+  endif()
+
+  
+  if(${HCC_FOUND})
+
+    set(CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD_REQUIRED OFF)
+    
+    string(STRIP ${HCC_COMPILE_FLAGS} HCC_EXECUTABLE_FLAGS) 
+    set (HCC_EXECUTABLE_FLAGS "${HCC_EXECUTABLE_FLAGS} ${HCC_LINKER_FLAGS}")
+
+    set (CMAKE_CXX_FLAGS_RELEASE ${HCC_EXECUTABLE_FLAGS})
+    set (HCC_EXECUTABLE_FLAGS "${HCC_EXECUTABLE_FLAGS} -g")
+    set (CMAKE_CXX_FLAGS_DEBUG ${HCC_EXECUTABLE_FLAGS})
+    
+    set (CMAKE_CXX_COMPILER ${PATH_TO_HCC})
+    
+    add_executable(gpu-stream-hcc main.cpp HCCStream.cpp)
+    target_compile_definitions(gpu-stream-hcc PUBLIC HCC)
+    
+    
+  else ()
+    message("Skipping HCC...")
+  endif ()
+
+ENDIF(UNIX)
+
+#-------------------------------------------------------------------------------
 # SYCL
 #-------------------------------------------------------------------------------
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" OR
@@ -169,3 +216,5 @@ if (HAS_SYCL)
 else ()
   message("Skipping SYCL...")
 endif (HAS_SYCL)
+
+
