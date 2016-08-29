@@ -39,7 +39,14 @@
 #endif
 
 // Default size of 2^25
-unsigned int ARRAY_SIZE = 33554432;
+//unsigned int ARRAY_SIZE = 33554432;
+
+//unsigned int ARRAY_SIZE = 1024 * 1024;
+
+unsigned int ARRAY_SIZE = 1024;
+
+
+
 unsigned int num_times = 100;
 unsigned int deviceIndex = 0;
 bool use_float = false;
@@ -131,8 +138,13 @@ void run()
   stream = new OMP45Stream<T>(ARRAY_SIZE, a.data(), b.data(), c.data(), deviceIndex);
 
 #elif defined(HCC)
+
+  HCCStream<T>* gpu_buffer =  (HCCStream<T>*)  hc::allocate_coarsed_grain_system_memory(sizeof(HCCStream<T>));
+  stream = new(gpu_buffer) HCCStream<T>(ARRAY_SIZE, deviceIndex);
+  
+
   // Use the "reference" OpenMP 3 implementation
-  stream = new HCCStream<T>(ARRAY_SIZE, deviceIndex);
+  //stream = new HCCStream<T>(ARRAY_SIZE, deviceIndex);
   
 #endif
 
@@ -170,6 +182,7 @@ void run()
     stream->triad();
     t2 = std::chrono::high_resolution_clock::now();
     timings[3].push_back(std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count());
+
 
   }
 
@@ -214,8 +227,12 @@ void run()
 
   }
 
+#ifdef HCC
+  stream->~Stream();
+  hc::free_system_memory((void*)gpu_buffer);
+#else
   delete stream;
-
+#endif
 }
 
 template <typename T>
