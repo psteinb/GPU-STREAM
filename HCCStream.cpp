@@ -45,10 +45,6 @@ void listDevices(void)
   }
 }
 
-
-#define SCC_VERIFY (1)
-
-
 template <class T>
 HCCStream<T>::HCCStream(const unsigned int ARRAY_SIZE, const int device_index):
   array_size(ARRAY_SIZE),
@@ -88,45 +84,6 @@ void HCCStream<T>::write_arrays(const std::vector<T>& a, const std::vector<T>& b
   hc::copy(a.cbegin(),a.cend(),d_a);
   hc::copy(b.cbegin(),b.cend(),d_b);
   hc::copy(c.cbegin(),c.cend(),d_c);
-
-
-
-#if (SCC_VERIFY!=0) 
-{
-   hc::array_view<T> av_d_a(d_a);
-   int errors = 0;
-   int avi = 0;
-   for (auto i = a.begin(); i != a.end(); i++,avi++) {
-     if (av_d_a[avi] != *i)
-       errors++;
-   }
-   printf("%d errors in d_a\n",errors);
-}
-
-{
-   hc::array_view<T> av_d_b(d_b);
-   int errors = 0;
-   int avi = 0;
-   for (auto i = b.begin(); i != b.end(); i++,avi++) {
-     if (av_d_b[avi] != *i)
-       errors++;
-   }
-   printf("%d errors in d_b\n",errors);
-}
-
-{
-   hc::array_view<T> av_d_c(d_c);
-   int errors = 0;
-   int avi = 0;
-   for (auto i = c.begin(); i != c.end(); i++,avi++) {
-     if (av_d_c[avi] != *i)
-       errors++;
-   }
-   printf("%d errors in d_c\n",errors);
-}
-#endif
-
-
 }
 
 template <class T>
@@ -141,13 +98,8 @@ void HCCStream<T>::read_arrays(std::vector<T>& a, std::vector<T>& b, std::vector
 template <class T>
 void HCCStream<T>::copy()
 {
-
-  std::cout << "In " << __FUNCTION__ << std::endl;
-
-#if 1
   hc::array<T> &d_a = this->d_a;
   hc::array<T> &d_c = this->d_c;
-#endif
 
   try{
   // launch a GPU kernel to compute the saxpy in parallel 
@@ -158,24 +110,6 @@ void HCCStream<T>::copy()
 								 d_c[i] = d_a[i];
 								});
     future_kernel.wait();
-
-
-#if (SCC_VERIFY!=0) 
-{
-   hc::array_view<T> av_d_c(d_c);
-   hc::array_view<T> av_d_a(d_a);
-   int errors = 0;
-   for (int i = 0; i < array_size; i++) {
-     if (av_d_c[i]!=av_d_a[i]) {
-       errors++;
-     }
-   }
-   printf("%s %d errors\n",__FUNCTION__,errors);
-}
-#endif
-
-
-
   }
   catch(std::exception& e){
     std::cout << e.what() << std::endl;
@@ -186,8 +120,6 @@ void HCCStream<T>::copy()
 template <class T>
 void HCCStream<T>::mul()
 {
-  std::cout << "In " << __FUNCTION__ << std::endl;
-
   hc::array<T> &d_b = this->d_b;
   hc::array<T> &d_c = this->d_c;
 
@@ -210,9 +142,6 @@ void HCCStream<T>::mul()
 template <class T>
 void HCCStream<T>::add()
 {
-
-  std::cout << "In " << __FUNCTION__ << std::endl;
-
   hc::array<T> &d_a = this->d_a;
   hc::array<T> &d_b = this->d_b;
   hc::array<T> &d_c = this->d_c;
@@ -235,9 +164,6 @@ void HCCStream<T>::add()
 template <class T>
 void HCCStream<T>::triad()
 {
-
-  std::cout << "In " << __FUNCTION__ << std::endl;
-
   hc::array<T> &d_a = this->d_a;
   hc::array<T> &d_b = this->d_b;
   hc::array<T> &d_c = this->d_c;
