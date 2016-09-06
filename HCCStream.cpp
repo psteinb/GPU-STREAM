@@ -8,6 +8,7 @@
 #include <codecvt>
 #include <vector>
 #include <locale>
+#include <cstdio>
 
 #include "HCCStream.h"
 
@@ -44,14 +45,13 @@ void listDevices(void)
   }
 }
 
-
-
 template <class T>
 HCCStream<T>::HCCStream(const unsigned int ARRAY_SIZE, const int device_index):
   array_size(ARRAY_SIZE),
-  d_a(ARRAY_SIZE),
-  d_b(ARRAY_SIZE),
-  d_c(ARRAY_SIZE)
+  accelerator(hc::accelerator::get_all()[device_index]),
+  d_a(ARRAY_SIZE,accelerator.get_default_view()),
+  d_b(ARRAY_SIZE,accelerator.get_default_view()),
+  d_c(ARRAY_SIZE,accelerator.get_default_view())
 {
 
   // The array size must be divisible by TBSIZE for kernel launches
@@ -67,7 +67,6 @@ HCCStream<T>::HCCStream(const unsigned int ARRAY_SIZE, const int device_index):
   auto current = accs[device_index];
   
   std::cout << "Using HCC device " << getDeviceName(current) << std::endl;
-  
 
   // Check buffers fit on the device
   // TODO: unclear how to do that!!
@@ -96,15 +95,19 @@ void HCCStream<T>::read_arrays(std::vector<T>& a, std::vector<T>& b, std::vector
   hc::copy(d_c,c.begin());
 }
 
-
 template <class T>
 void HCCStream<T>::copy()
 {
+  hc::array<T> &d_a = this->d_a;
+  hc::array<T> &d_c = this->d_c;
+
   try{
   // launch a GPU kernel to compute the saxpy in parallel 
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
+    hc::completion_future future_kernel = hc::parallel_for_each(accelerator.get_default_view()
+                , hc::extent<1>(array_size)
 								, [&](hc::index<1> i) __attribute((hc)) {
-								  d_c[i] = d_a[i];
+
+								 d_c[i] = d_a[i];
 								});
     future_kernel.wait();
   }
@@ -117,10 +120,14 @@ void HCCStream<T>::copy()
 template <class T>
 void HCCStream<T>::mul()
 {
+  hc::array<T> &d_b = this->d_b;
+  hc::array<T> &d_c = this->d_c;
+
   const T scalar = 0.3;
   try{
   // launch a GPU kernel to compute the saxpy in parallel 
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
+    hc::completion_future future_kernel = hc::parallel_for_each(accelerator.get_default_view()
+                , hc::extent<1>(array_size)
 								, [&](hc::index<1> i) __attribute((hc)) {
 								  d_b[i] = scalar*d_c[i];
 								});
@@ -135,9 +142,14 @@ void HCCStream<T>::mul()
 template <class T>
 void HCCStream<T>::add()
 {
+  hc::array<T> &d_a = this->d_a;
+  hc::array<T> &d_b = this->d_b;
+  hc::array<T> &d_c = this->d_c;
+
   try{
     // launch a GPU kernel to compute the saxpy in parallel 
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
+    hc::completion_future future_kernel = hc::parallel_for_each(accelerator.get_default_view()
+                , hc::extent<1>(array_size)
 								, [&](hc::index<1> i) __attribute((hc)) {
 								  d_c[i] = d_a[i]+d_b[i];
 								});
@@ -152,10 +164,15 @@ void HCCStream<T>::add()
 template <class T>
 void HCCStream<T>::triad()
 {
+  hc::array<T> &d_a = this->d_a;
+  hc::array<T> &d_b = this->d_b;
+  hc::array<T> &d_c = this->d_c;
+
   const T scalar = 0.3;
   try{
     // launch a GPU kernel to compute the saxpy in parallel 
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
+    hc::completion_future future_kernel = hc::parallel_for_each(accelerator.get_default_view()
+                , hc::extent<1>(array_size)
 								, [&](hc::index<1> i) __attribute((hc)) {
 								  d_a[i] = d_b[i] + scalar*d_c[i];
 								});

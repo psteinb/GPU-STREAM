@@ -40,6 +40,7 @@
 
 // Default size of 2^25
 unsigned int ARRAY_SIZE = 33554432;
+
 unsigned int num_times = 100;
 unsigned int deviceIndex = 0;
 bool use_float = false;
@@ -133,7 +134,7 @@ void run()
 #elif defined(HCC)
   // Use the "reference" OpenMP 3 implementation
   stream = new HCCStream<T>(ARRAY_SIZE, deviceIndex);
-  
+
 #endif
 
   stream->write_arrays(a, b, c);
@@ -213,9 +214,7 @@ void run()
       << std::endl;
 
   }
-
   delete stream;
-
 }
 
 template <typename T>

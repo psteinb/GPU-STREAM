@@ -23,6 +23,9 @@ protected:
   // Size of arrays
   unsigned int array_size;
 
+  // Selected device
+  hc::accelerator accelerator;
+
   // Device side pointers to arrays
   hc::array<T,1> d_a;
   hc::array<T,1> d_b;
