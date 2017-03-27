@@ -2,16 +2,14 @@
 //
 // For full license terms please see the LICENSE file distributed with this
 // source code
-
+#include "HCStream.h"
 
 #include <codecvt>
 #include <vector>
 #include <locale>
 #include <numeric>
 
-#include "HCStream.h"
-
-#define TBSIZE 1024
+static constexpr int TBSIZE = 1024;
 
 std::string getDeviceName(const hc::accelerator& _acc)
 {
@@ -44,250 +42,245 @@ void listDevices(void)
 
 
 template <class T>
-HCStream<T>::HCStream(const unsigned int ARRAY_SIZE, const int device_index):
-  array_size(ARRAY_SIZE),
-  d_a(ARRAY_SIZE),
-  d_b(ARRAY_SIZE),
-  d_c(ARRAY_SIZE)
+HCStream<T>::HCStream(unsigned int array_sz, int device_index)
+    : d_a(array_sz), d_b(array_sz), d_c(array_sz)
 {
+    // The array size must be divisible by TBSIZE for kernel launches
+    if (array_sz % TBSIZE != 0)
+    {
+        std::stringstream ss;
+        ss << "Array size must be a multiple of " << TBSIZE;
+        throw std::runtime_error(ss.str());
+    }
+    // Set device
 
-  // The array size must be divisible by TBSIZE for kernel launches
-  if (ARRAY_SIZE % TBSIZE != 0)
-  {
-    std::stringstream ss;
-    ss << "Array size must be a multiple of " << TBSIZE;
-    throw std::runtime_error(ss.str());
-  }
+    std::vector<hc::accelerator> accs = hc::accelerator::get_all();
+    auto current = accs[device_index];
 
-  // // Set device
-  std::vector<hc::accelerator> accs = hc::accelerator::get_all();
-  auto current = accs[device_index];
+    hc::accelerator::set_default(current.get_device_path());
 
-  hc::accelerator::set_default(current.get_device_path());
-
-  std::cout << "Using HC device " << getDeviceName(current) << std::endl;
-
-}
-
-
-template <class T>
-HCStream<T>::~HCStream()
-{
+    std::cout << "Using HC device " << getDeviceName(current) << std::endl;
 }
 
 template <class T>
 void HCStream<T>::init_arrays(T _a, T _b, T _c)
 {
-  hc::array_view<T,1> view_a(this->d_a);
-  hc::array_view<T,1> view_b(this->d_b);
-  hc::array_view<T,1> view_c(this->d_c);
+    auto& view_a = this->d_a;
+    auto& view_b = this->d_b;
+    auto& view_c = this->d_c;
 
-  hc::completion_future future_a= hc::parallel_for_each(hc::extent<1>(array_size)
-                                , [=](hc::index<1> i) [[hc]] {
-                                  view_a[i] = _a;
-                                });
+    hc::parallel_for_each(
+        view_a.get_extent(),
+        [=, &view_a, &view_b, &view_c](hc::index<1> idx) [[hc]] {
+        view_a[idx] = _a;
+        view_b[idx] = _b;
+        view_c[idx] = _c;
+    });
 
-  hc::completion_future future_b= hc::parallel_for_each(hc::extent<1>(array_size)
-                                                        , [=](hc::index<1> i) [[hc]] {
-                                                          view_b[i] = _b;
-                                                        });
-  hc::completion_future future_c= hc::parallel_for_each(hc::extent<1>(array_size)
-                                                        , [=](hc::index<1> i) [[hc]] {
-                                                          view_c[i] = _c;
-                                                        });
-  try{
-    future_a.wait();
-    future_b.wait();
-    future_c.wait();
-  }
-  catch(std::exception& e){
-    std::cout << __FILE__ << ":" << __LINE__ << "\t future_{a,b,c} " << e.what() << std::endl;
-    throw;
-  }
+    try {
+        view_a.get_accelerator_view().wait();
+    }
+    catch (std::exception& e) {
+        std::cout << __FILE__ << ":" << __LINE__ << e.what() << std::endl;
 
+        throw;
+    }
 }
 
 template <class T>
-void HCStream<T>::read_arrays(std::vector<T>& a, std::vector<T>& b, std::vector<T>& c)
+void HCStream<T>::read_arrays(
+    std::vector<T>& a, std::vector<T>& b, std::vector<T>& c)
 {
-  hc::copy(d_a,a.begin());
-  hc::copy(d_b,b.begin());
-  hc::copy(d_c,c.begin());
+    a = d_a;
+    b = d_b;
+    c = d_c;
 }
-
 
 template <class T>
 void HCStream<T>::copy()
 {
+    const auto& view_a = this->d_a;
+    auto& view_c = this->d_c;
 
-  hc::array_view<T,1> view_a = this->d_a;
-  hc::array_view<T,1> view_c = this->d_c;
+    try {
+        hc::parallel_for_each(
+            view_a.get_extent(), [&](hc::index<1> idx) [[hc]] {
+            view_c[idx] = view_a[idx];
+        });
+        view_c.get_accelerator_view().wait();
+    }
+    catch (std::exception& e) {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
 
-  try{
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
-                                , [=](hc::index<1> index) [[hc]] {
-                                  view_c[index] = view_a[index];
-								});
-    future_kernel.wait();
-  }
-  catch(std::exception& e){
-    std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
-    throw;
-  }
+        throw e;
+    }
 }
 
 template <class T>
 void HCStream<T>::mul()
 {
+    static constexpr T scalar = 0.3;
 
-  const T scalar = 0.3;
-  hc::array_view<T,1> view_b = this->d_b;
-  hc::array_view<T,1> view_c = this->d_c;
+    auto& view_b = this->d_b;
+    const auto& view_c = this->d_c;
 
-  try{
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
-                                , [=](hc::index<1> i) [[hc]] {
-                                  view_b[i] = scalar*view_c[i];
-								});
-    future_kernel.wait();
-  }
-  catch(std::exception& e){
-    std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
-    throw;
-  }
+    try {
+        hc::parallel_for_each(
+            view_b.get_extent(), [=, &view_b, &view_c](hc::index<1> idx) [[hc]] {
+            view_b[idx] = scalar * view_c[idx];
+        });
+
+        view_b.get_accelerator_view().wait();
+    }
+    catch (std::exception& e) {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
+        throw;
+    }
 }
 
 template <class T>
 void HCStream<T>::add()
 {
+    const auto& view_a = this->d_a;
+    const auto& view_b = this->d_b;
+    auto& view_c = this->d_c;
 
+    try {
+        hc::parallel_for_each(
+            view_c.get_extent(), [&](hc::index<1> idx) [[hc]] {
+            view_c[idx] = view_a[idx] + view_b[idx];
+        });
+        view_c.get_accelerator_view().wait();
+    }
+    catch (std::exception& e) {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
 
-  hc::array_view<T,1> view_a(this->d_a);
-  hc::array_view<T,1> view_b(this->d_b);
-  hc::array_view<T,1> view_c(this->d_c);
-
-  try{
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
-                                , [=](hc::index<1> i) [[hc]] {
-                                  view_c[i] = view_a[i]+view_b[i];
-								});
-    future_kernel.wait();
-  }
-  catch(std::exception& e){
-    std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
-    throw;
-  }
+        throw e;
+    }
 }
 
 template <class T>
 void HCStream<T>::triad()
 {
+    static constexpr T scalar = 0.3;
 
-  const T scalar = 0.3;
-  hc::array_view<T,1> view_a(this->d_a);
-  hc::array_view<T,1> view_b(this->d_b);
-  hc::array_view<T,1> view_c(this->d_c);
+    auto& view_a = this->d_a;
+    const auto& view_b = this->d_b;
+    const auto& view_c = this->d_c;
 
-  try{
-    hc::completion_future future_kernel = hc::parallel_for_each(hc::extent<1>(array_size)
-                                , [=](hc::index<1> i) [[hc]] {
-                                  view_a[i] = view_b[i] + scalar*view_c[i];
-								});
-    future_kernel.wait();
-  }
-  catch(std::exception& e){
-    std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
-    throw;
-  }
+    try {
+        hc::parallel_for_each(
+            view_a.get_extent(),
+            [=, &view_a, &view_b, &view_c](hc::index<1> idx) [[hc]] {
+            view_a[idx] = view_b[idx] + scalar * view_c[idx];
+        });
+        view_a.get_accelerator_view().wait();
+    }
+    catch (std::exception& e) {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
+
+        throw e;
+    }
 }
 
 template <class T>
 T HCStream<T>::dot_impl()
 {
+    //implementation adapted from
+    //https://ampbook.codeplex.com/SourceControl/latest
+    // ->Samples/CaseStudies/Reduction
+    // ->CascadingReduction.h
 
-  //implementation adapted from
-  //https://ampbook.codeplex.com/SourceControl/latest
-  // ->Samples/CaseStudies/Reduction
-  // ->CascadingReduction.h
+    static constexpr std::size_t n_tiles = 64;
 
-  hc::array_view<T,1> view_a(this->d_a);
-  hc::array_view<T,1> view_b(this->d_b);
+    const auto& view_a = this->d_a;
+    const auto& view_b = this->d_b;
 
-  auto ex = view_a.get_extent();
-  hc::tiled_extent<1>   tiled_ex = ex.tile(TBSIZE);
+    auto ex = view_a.get_extent();
+    const auto tiled_ex = hc::extent<1>(n_tiles * TBSIZE).tile(TBSIZE);
+    const auto domain_sz = tiled_ex.size();
 
-  const size_t n_tiles = 64;
-  const size_t n_elements = array_size;
-  // hc::array<T,1>      d_product(array_size);
-  // hc::array_view<T,1> view_p(d_product)    ;
+    hc::array<T, 1> partial(n_tiles);
 
-  hc::array<T, 1>     partial(n_tiles*TBSIZE);
-  hc::array_view<T,1> partialv(partial)    ;
+    hc::parallel_for_each(tiled_ex,
+                          [=,
+                           &view_a,
+                           &view_b,
+                           &partial](const hc::tiled_index<1>& tidx) [[hc]] {
+        // Alex note: you could consider this alternative, which I find more
+        //            straightforward to teach, and which should come at no
+        //            performance penalty.
+        auto gidx = tidx.global[0];
+        T r = T{0}; // Assumes reduction op is addition.
+        while (gidx < view_a.get_extent().size()) {
+            r += view_a[gidx] * view_b[gidx];
+            gidx += domain_sz;
+        }
 
-  hc::completion_future dot_kernel = hc::parallel_for_each(tiled_ex,
-                                                           [=](hc::tiled_index<1> tidx) [[hc]] {
+        tile_static T tileData[TBSIZE];
+        tileData[tidx.local[0]] = r;
 
-                                                             std::size_t tid = tidx.local[0];//index in the tile
+        tidx.barrier.wait_with_tile_static_memory_fence();
 
-                                                             tile_static T tileData[TBSIZE];
+        for (auto h = TBSIZE / 2; h; h /= 2) {
+            if (tidx.local[0] < h) {
+                tileData[tidx.local[0]] += tileData[tidx.local[0] + h];
+            }
+            tidx.barrier.wait_with_tile_static_memory_fence();
+        }
 
-                                                             std::size_t i = (tidx.tile[0] * 2 * TBSIZE) + tid;
-                                                             std::size_t stride = TBSIZE * 2 * n_tiles;
+        if (tidx.global == tidx.tile_origin) partial[tidx.tile] = tileData[0];
 
-                                                             //  Load and add many elements, rather than just two
-                                                             T sum = 0;
-                                                             do
-                                                             {
-                                                               T near = view_a[i]*view_b[i];
-                                                               T far = view_a[i+TBSIZE]*view_b[i+TBSIZE];
-                                                               sum += (far + near);
-                                                               i += stride;
-                                                             }
-                                                             while (i < n_elements);
-                                                             tileData[tid] = sum;
+//        auto i = (tidx.tile[0] * 2 * TBSIZE) + tidx.local[0];
+//        auto stride = TBSIZE * 2 * n_tiles;
+//
+//        //  Load and add many elements, rather than just two
+//        T sum = 0;
+//        do
+//        {
+//            T n = view_a[i] * view_b[i];
+//            T f = view_a[i + TBSIZE] * view_b[i + TBSIZE];
+//
+//            sum += n + f;
+//            i += stride;
+//        }
+//        while (i < view_a.get_extent().size());
+//
+//        tile_static T tileData[TBSIZE];
+//        tileData[tidx.local[0]] = sum;
+//
+//        tidx.barrier.wait_with_tile_static_memory_fence();
+//
+//        //  Reduce values for data on this tile
+//        for (auto h = (TBSIZE / 2); h > 0; stride /= 2)
+//        {
+//            //  Remember that this is a branch within a loop and all threads
+//            //  will have to execute this but only threads with a tid < stride
+//            //  will do useful work.
+//
+//            if (tidx.local[0] < h)
+//                tileData[tidx.local[0]] += tileData[tidx.local[0] + h];
+//
+//            tidx.barrier.wait_with_tile_static_memory_fence();
+//        }
+//
+//        //  Write the result for this tile back to global memory
+//        if (tidx.local[0] == 0)
+//            partial[tidx.tile[0]] = tileData[tidx.local[0]];
+    });
 
-                                                             tidx.barrier.wait();
+    try {
+        partial.get_accelerator_view().wait();
+    }
+    catch (std::exception& e) {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
+        throw;
+    }
 
-                                                             //  Reduce values for data on this tile
-                                                             for (stride = (TBSIZE / 2); stride > 0; stride >>= 1)
-                                                             {
-                                                               //  Remember that this is a branch within a loop and all threads will have to execute
-                                                               //  this but only threads with a tid < stride will do useful work.
-                                                               if (tid < stride)
-                                                                 tileData[tid] += tileData[tid + stride];
+    std::vector<T> h_partial = partial;
+    T result = std::accumulate(h_partial.begin(), h_partial.end(), 0.);
 
-                                                               tidx.barrier.wait_with_tile_static_memory_fence();
-                                                             }
-
-                                                             //  Write the result for this tile back to global memory
-                                                             if (tid == 0)
-                                                               partialv[tidx.tile[0]] = tileData[tid];
-                                                           });
-
-  try{
-
-    dot_kernel.wait();
-  }
-  catch(std::exception& e){
-    std::cerr << __FILE__ << ":" << __LINE__ << "\t" << e.what() << std::endl;
-    throw;
-  }
-
-  std::vector<T> h_partial(n_tiles);
-  hc::copy(partial, h_partial.begin());
-  T result = std::accumulate(h_partial.begin(), h_partial.end(), 0.);
-
-  return result;
-}
-
-template <class T>
-T HCStream<T>::dot()
-{
-  #ifdef HC_DEVELOP
-  return dot_impl();
-  #else
-  return 0.;
-  #endif
+    return result;
 }
 
 template class HCStream<float>;
