@@ -7,40 +7,45 @@
 
 #pragma once
 
+#include "Stream.h"
+
+#include "hc.hpp"
+
 #include <iostream>
 #include <stdexcept>
 #include <sstream>
-
-#include "Stream.h"
-#include "hc.hpp"
 
 #define IMPLEMENTATION_STRING "HC"
 
 template <class T>
 class HCStream : public Stream<T>
 {
+  T dot_impl();
 protected:
-  // Size of arrays
-  unsigned int array_size;
+  // Alex note: these are not pointers to arrays but rather a full fledged ADT
+  //            which implements the concept of an array.
   // Device side pointers to arrays
   hc::array<T,1> d_a;
   hc::array<T,1> d_b;
   hc::array<T,1> d_c;
-
-
 public:
-
-  HCStream(const unsigned int, const int);
-  ~HCStream();
+  HCStream(unsigned int, int);
+  ~HCStream() = default;
 
   virtual void copy() override;
   virtual void add() override;
   virtual void mul() override;
   virtual void triad() override;
-  virtual T dot() override;
-  T dot_impl();
+  virtual T dot() override
+  {
+    #ifdef HC_DEVELOP
+      return dot_impl();
+    #else
+      return 0.;
+    #endif
+  }
 
   virtual void init_arrays(T initA, T initB, T initC) override;
-  virtual void read_arrays(std::vector<T>& a, std::vector<T>& b, std::vector<T>& c) override;
-
+  virtual void read_arrays(
+      std::vector<T>& a, std::vector<T>& b, std::vector<T>& c) override;
 };
